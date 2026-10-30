@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>节点状态</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#fbfbfa;--fg:#1f2328;--mut:#656d76;--line:#d8dee4;--card:#fff;--acc:#0969da;--ok:#1a7f37}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--mut:#8b949e;--line:#30363d;--card:#161b22;--acc:#58a6ff;--ok:#3fb950}}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;padding:32px 20px}
+.wrap{max-width:680px;margin:0 auto}
+h1{font-size:20px;font-weight:650;margin-bottom:6px}
+.sub{color:var(--mut);font-size:13.5px;margin-bottom:24px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:28px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
+.stat .k{color:var(--mut);font-size:12px;margin-bottom:4px}
+.stat .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13.5px}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:500;font-size:12px}
+tr:last-child td{border-bottom:0}
+td:last-child{font-variant-numeric:tabular-nums;color:var(--ok)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.empty{color:var(--mut);padding:24px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>优选 IP 状态</h1>
+<p class="sub">由 GitHub Actions 每 30 分钟自动更新</p>
+
+<div class="stats" id="stats"></div>
+<div id="list"></div>
+</div>
+
+<script>
+fetch('./stats.json', { cache: 'no-store' })
+  .then(r => r.ok ? r.json() : null)
+  .then(d => {
+    if (!d) throw new Error('no data');
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="k">可用 / 候选</div><div class="v">${d.alive} / ${d.candidates}</div></div>
+      <div class="stat"><div class="k">最快</div><div class="v">${d.fastest_ms}<span style="font-size:13px;color:var(--mut)">ms</span></div></div>
+      <div class="stat"><div class="k">最慢</div><div class="v">${d.slowest_ms}<span style="font-size:13px;color:var(--mut)">ms</span></div></div>
+      <div class="stat"><div class="k">更新时间</div><div class="v" style="font-size:13px">${d.updated}</div></div>
+    `;
+    const rows = d.ips.map((x, i) =>
+      `<tr><td>${i + 1}</td><td><code>${x.ip}</code></td><td>${x.ms}ms</td></tr>`
+    ).join('');
+    document.getElementById('list').innerHTML = `
+      <table><thead><tr><th>#</th><th>IP</th><th>延迟</th></tr></thead><tbody>${rows}</tbody></table>
+    `;
+  })
+  .catch(() => {
+    document.getElementById('list').innerHTML = '<div class="empty">暂无数据，等待首次工作流运行</div>';
+  });
+</script>
+</body>
+</html>
