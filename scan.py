@@ -87,6 +87,41 @@ def test_tls(ip, sni):
     return best
 
 
+def upload_kv(lines):
+    """把 IP 列表写入 Cloudflare KV 的 ADD.txt"""
+    token = os.environ.get("CF_API_TOKEN", "").strip()
+    acc = os.environ.get("CF_ACCOUNT_ID", "").strip()
+    ns = os.environ.get("CF_KV_NAMESPACE", "").strip()
+
+    if not (token and acc and ns):
+        log("跳过 KV 写入（未配置 CF_API_TOKEN / CF_ACCOUNT_ID / CF_KV_NAMESPACE）")
+        return False
+
+    body = "\n".join(lines).encode("utf-8")
+    url = (
+        f"https://api.cloudflare.com/client/v4/accounts/{acc}"
+        f"/storage/kv/namespaces/{ns}/values/ADD.txt"
+    )
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="PUT",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "text/plain",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as r:
+            raw = r.read().decode("utf-8", "ignore")
+        ok = '"success":true' in raw.replace(" ", "")
+        log("KV 写入: " + ("成功" if ok else "失败 " + raw[:200]))
+        return ok
+    except Exception as e:
+        log(f"KV 写入失败: {type(e).__name__}: {str(e)[:150]}")
+        return False
+
+
 def main():
     domain = os.environ.get("DOMAIN", "").strip()
     if not domain:
@@ -165,6 +200,12 @@ def main():
         log(f"  {ip:<18} {ms}ms")
     log("")
     log(f"已写入 {nodes_path}")
+
+    # 4. 同步到 Cloudflare KV（edgetunnel 的 ADD.txt）
+    log("")
+    log("=== 4. 同步到 KV ===")
+    kv_lines = [f"{ip}:{PORT}" for ip, _ in top]
+    upload_kv(kv_lines)
 
 
 if __name__ == "__main__":
