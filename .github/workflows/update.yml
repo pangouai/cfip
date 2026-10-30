@@ -13,10 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: 测速筛选并写入 KV
         env:
           DOMAIN: ${{ secrets.TEST_DOMAIN }}
@@ -24,9 +28,15 @@ jobs:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_KV_NAMESPACE: ${{ secrets.CF_KV_NAMESPACE }}
         run: python scan.py
-      - name: 提交结果
+
+      - name: 提交结果（存档）
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add public/nodes.txt public/stats.json || true
-          git diff --staged --quiet || (git commit -m "update $(date -u +%F)" && git push)
+          if git diff --staged --quiet; then
+            echo "无变化"
+          else
+            git commit -m "chore: 更新优选IP $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
