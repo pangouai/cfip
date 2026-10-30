@@ -345,7 +345,8 @@ def main():
     # ── 6. 同步 KV ──
     log("")
     log("=== 5. 同步到 KV ===")
-    kv_lines = [f"{ip}:{PORT}" for ip, _, _ in picked]
+    # 带上运营商备注，客户端里能直接看出是电信/联通/移动
+    kv_lines = [f"{ip}:{PORT}#{notes.get(key, key)}" for ip, _, key in picked]
     upload_kv(kv_lines)
 
 
