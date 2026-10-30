@@ -43,10 +43,11 @@ from datetime import datetime, timezone
 # ── 配置 ──
 
 # 大陆三网实测优选 IP API（每 10 分钟更新）
+# ips 参数尽量要满，脚本会自己按 QUOTA 截取
 CARRIER_SOURCES = [
-    ("ct",   "电信", "https://cf.090227.xyz/ct?ips=12"),
-    ("cu",   "联通", "https://cf.090227.xyz/cu?ips=12"),
-    ("cmcc", "移动", "https://cf.090227.xyz/cmcc?ips=12"),
+    ("ct",   "电信", "https://cf.090227.xyz/ct?ips=20"),
+    ("cu",   "联通", "https://cf.090227.xyz/cu?ips=10"),
+    ("cmcc", "移动", "https://cf.090227.xyz/cmcc?ips=10"),
 ]
 
 # 兜底源（境外视角，仅在某一路运营商拿不到数据时补位）
@@ -55,7 +56,16 @@ FALLBACK_SOURCES = [
 ]
 
 PORT = 443
-PER_CARRIER = 8        # 每家运营商保留几个（8×3=24）
+
+# 各运营商保留名额。
+# 注意：cf.090227.xyz 的 ips 参数不生效，每路固定返回约 6-8 个，
+# 所以电信拿满（6），联通/移动各 6，剩下名额从富余里补。
+QUOTA = {
+    "ct":    6,   # 电信（接口上限，全要）
+    "cu":    6,   # 联通
+    "cmcc":  6,   # 移动
+}
+
 TRIES = 2              # 每个 IP 测几次
 TIMEOUT = 6            # 单次连接超时（秒）
 WORKERS = 20           # 并发线程数
@@ -248,8 +258,7 @@ def main():
         sys.exit(1)
 
     # ── 4. 按运营商分组保留 ──
-    # 目标：每家运营商都保留 PER_CARRIER 个存活 IP，
-    #       若某家不够，从其他家的富余里补，总数尽量达到 PER_CARRIER*3
+    # 目标：电信优先（QUOTA 里配的份额），某家不够时从其他家富余里补
     log("=== 3. 按运营商分组 ===")
     grouped = {key: [] for key, _, _ in CARRIER_SOURCES}
     for ip, ms in alive.items():
@@ -257,33 +266,45 @@ def main():
         if key in grouped:
             grouped[key].append((ip, ms))
 
-    # 组内按存活握手时间排（虽然不代表大陆延迟，但能筛掉质量差的）
+    # 组内按握手时间排（虽不代表大陆延迟，但能筛掉质量差的）
     for key in grouped:
         grouped[key].sort(key=lambda x: x[1])
 
     picked = []
     used = set()
 
-    # 第一轮：每家取 PER_CARRIER 个
+    # 第一轮：按 QUOTA 分配
     for key, label, _ in CARRIER_SOURCES:
-        take = grouped[key][:PER_CARRIER]
+        quota = QUOTA.get(key, 8)
+        take = grouped[key][:quota]
         for ip, ms in take:
             picked.append((ip, ms, key))
             used.add(ip)
-        log(f"  {label}: {len(take)} 个")
+        lack = quota - len(take)
+        log(f"  {label}: {len(take)}/{quota} 个" + (f"（缺 {lack}）" if lack > 0 else ""))
 
-    # 第二轮：若总数不足，从剩余存活 IP 里补
-    target = PER_CARRIER * len(CARRIER_SOURCES)
+    # 第二轮：不足的部分从剩余存活 IP 补（电信优先补）
+    target = sum(QUOTA.values())
     if len(picked) < target:
+        # 排序时让电信的排前面，保证补位也优先电信
+        order = {"ct": 0, "cu": 1, "cmcc": 2}
         rest = sorted(
-            [(ip, ms) for ip, ms in alive.items() if ip not in used],
-            key=lambda x: x[1],
+            [(ip, ms, seen[ip][0]) for ip, ms in alive.items() if ip not in used],
+            key=lambda x: (order.get(x[2], 9), x[1]),
         )
-        for ip, ms in rest:
+        added = 0
+        for ip, ms, key in rest:
             if len(picked) >= target:
                 break
-            picked.append((ip, ms, seen[ip][0]))
+            picked.append((ip, ms, key))
             used.add(ip)
+            added += 1
+        if added:
+            log(f"  从富余补位: +{added} 个")
+
+    # 最终按运营商排一下，让电信节点排在订阅前面
+    order = {"ct": 0, "cu": 1, "cmcc": 2}
+    picked.sort(key=lambda x: (order.get(x[2], 9), x[1]))
 
     log(f"  合计: {len(picked)} 个")
     log("")
